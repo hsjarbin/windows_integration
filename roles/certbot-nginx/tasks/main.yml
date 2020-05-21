@@ -1,0 +1,41 @@
+---
+- name: install certbot-nginx
+  yum:
+    name: "{{ certbot_package }}"
+    state: latest
+
+- name: replace server_name to server_name fqdn in /etc/nginx/nginx.conf
+  lineinfile:
+    path: "{{ nginx_conf_file }}"
+    regexp: '        server_name'
+    line: "        server_name {{ ansible_facts['hostname'] }}.{{ guid_domain }};"
+  register: nginx_conf_output
+  notify: restart nginx
+
+- name: print debug info
+  debug:
+    var: nginx_conf_output
+
+- name: restart nginx
+  service:
+    name: "{{ nginx_service }}"
+    state: restarted
+    enabled: true
+
+- name: generate the certs
+  command: >-
+    certbot certonly --nginx --force-renewal
+    -m {{ email_address }}
+    --agree-tos
+    --no-eff-email 
+    -d {{ ansible_facts['hostname'] }}.{{ guid_domain }}
+
+- name: copy the created certs
+  copy:
+    src: "{{ letsencrypt_certdir }}/{{ ansible_facts['hostname'] }}.{{ guid_domain }}/{{ item }}"
+    dest: "{{ tower_cert_dir }}" 
+    remote_src: yes
+  with_items:
+    - cert.pem
+    - privkey.pem
+  notify: restart nginx
